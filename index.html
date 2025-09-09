@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Viewer - GLTF</title>
+    <meta http-equiv="Access-Control-Allow-Origin" content="*">
+    <meta http-equiv="Access-Control-Allow-Methods" content="GET, POST, PUT, DELETE, OPTIONS">
+    <meta http-equiv="Access-Control-Allow-Headers" content="Content-Type">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            background: transparent !important;
+            max-width: 100%;
+            max-height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        
+        // Camera setup - %30 görünüm için ayarlandı
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1, 5);
+        
+        // Renderer setup - ULTRA YÜKSEK ÇÖZÜNÜRLÜK
+        const renderer = new THREE.WebGLRenderer({ 
+            alpha: true, 
+            antialias: true,
+            preserveDrawingBuffer: true,
+            powerPreference: "high-performance",
+            precision: "highp",
+            logarithmicDepthBuffer: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.max(window.devicePixelRatio, 2)); // En az 2x, cihaz daha yüksekse onu kullan
+        renderer.setClearColor(0x000000, 0);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.physicallyCorrectLights = true;
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        renderer.toneMappingExposure = 1.8;
+        
+        // ULTRA kalite ayarları
+        renderer.capabilities.maxTextureSize = 8192;
+        renderer.capabilities.precision = 'highp';
+        
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        
+        // Lighting - Parlak ve net ışıklandırma
+        const ambientLight = new THREE.AmbientLight(0xffffff, 2.5); // Çok daha parlak
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 3.0); // Güçlü ana ışık
+        directionalLight.position.set(5, 5, 5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 4096; // Ultra yüksek gölge çözünürlüğü
+        directionalLight.shadow.mapSize.height = 4096;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        directionalLight.shadow.bias = -0.0001;
+        scene.add(directionalLight);
+        
+        // Ek ışık kaynakları - daha parlak
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 2.5);
+        directionalLight2.position.set(-5, 5, -5);
+        scene.add(directionalLight2);
+        
+        const directionalLight3 = new THREE.DirectionalLight(0xffffff, 2.0);
+        directionalLight3.position.set(0, -5, 5);
+        scene.add(directionalLight3);
+        
+        // Ön ışık ekle - detayları görmek için
+        const frontLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        frontLight.position.set(0, 0, 10);
+        scene.add(frontLight);
+        
+        // Controls - mouse ile döndürme
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enableZoom = false; // Zoom kapalı, sabit boyut
+        controls.enablePan = false; // Pan kapalı
+        controls.autoRotate = false; // Otomatik dönüş kapalı
+        
+        // Model yükleme - GLTF için
+        let mixer;
+        const loader = new THREE.GLTFLoader();
+        
+        loader.load('./canimshark.gltf', 
+            function (gltf) {
+                const model = gltf.scene;
+                
+                // Model'i merkeze al ve boyutlandır
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                
+                // En büyük boyutu bul - DAHA BÜYÜK MODEL
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const scale = 4.0 / maxDim; // 2.0'dan 4.0'a çıkarıldı - 2x daha büyük
+                
+                model.scale.setScalar(scale);
+                model.position.sub(center.multiplyScalar(scale));
+                model.position.y = 0;
+                
+                // Gölge ayarları ve materyal parlaklığı - Blender kalitesinde
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        
+                        // Materyal parlaklığını artır ve Blender kalitesini koru
+                        if (child.material) {
+                            // PBR materyal özelliklerini koru
+                            child.material.needsUpdate = true;
+                            
+                            if (child.material.emissive) {
+                                child.material.emissive.setHex(0x222222);
+                            }
+                            if (child.material.emissiveIntensity !== undefined) {
+                                child.material.emissiveIntensity = 0.1;
+                            }
+                            
+                            // ULTRA YÜKSEK texture kalitesi
+                            if (child.material.map) {
+                                child.material.map.anisotropy = 16;
+                                child.material.map.generateMipmaps = false; // Mipmap kapalı - daha net
+                                child.material.map.minFilter = THREE.LinearFilter;
+                                child.material.map.magFilter = THREE.LinearFilter;
+                                child.material.map.wrapS = THREE.ClampToEdgeWrapping;
+                                child.material.map.wrapT = THREE.ClampToEdgeWrapping;
+                            }
+                            if (child.material.normalMap) {
+                                child.material.normalMap.anisotropy = 16;
+                                child.material.normalMap.generateMipmaps = false;
+                                child.material.normalMap.minFilter = THREE.LinearFilter;
+                                child.material.normalMap.magFilter = THREE.LinearFilter;
+                            }
+                            if (child.material.roughnessMap) {
+                                child.material.roughnessMap.anisotropy = 16;
+                                child.material.roughnessMap.generateMipmaps = false;
+                                child.material.roughnessMap.minFilter = THREE.LinearFilter;
+                                child.material.roughnessMap.magFilter = THREE.LinearFilter;
+                            }
+                            if (child.material.metalnessMap) {
+                                child.material.metalnessMap.anisotropy = 16;
+                                child.material.metalnessMap.generateMipmaps = false;
+                                child.material.metalnessMap.minFilter = THREE.LinearFilter;
+                                child.material.metalnessMap.magFilter = THREE.LinearFilter;
+                            }
+                            
+                            // Materyal keskinliği için
+                            if (child.material.transparent !== undefined) {
+                                child.material.alphaTest = 0.1;
+                            }
+                        }
+                    }
+                });
+                
+                scene.add(model);
+                
+                // Animasyon varsa başlat - otomatik loop
+                if (gltf.animations && gltf.animations.length > 0) {
+                    mixer = new THREE.AnimationMixer(model);
+                    gltf.animations.forEach((clip) => {
+                        const action = mixer.clipAction(clip);
+                        action.setLoop(THREE.LoopRepeat); // Sonsuz döngü
+                        action.play();
+                    });
+                }
+                
+                // Kamerayı modele göre ayarla - daha yakın kamera
+                const distance = maxDim * 1.8; // 2.5'ten 1.8'e - daha yakın
+                camera.position.set(distance, distance * 0.3, distance);
+                camera.lookAt(0, 0, 0);
+                controls.update();
+                
+                console.log('GLTF model başarıyla yüklendi');
+            },
+            function (xhr) {
+                if (xhr.lengthComputable) {
+                    const percentComplete = xhr.loaded / xhr.total * 100;
+                    console.log(percentComplete.toFixed(2) + '% yüklendi');
+                }
+            },
+            function (error) {
+                console.error('GLTF model yükleme hatası:', error);
+                // Fallback olarak GLB dosyasını dene
+                console.log('GLB dosyası deneniyor...');
+                loader.load('./canimshark.glb', 
+                    function (gltf) {
+                        console.log('GLB fallback başarılı');
+                        // Yukarıdaki kodu tekrarla
+                    },
+                    undefined,
+                    function (fallbackError) {
+                        console.error('GLB fallback da başarısız:', fallbackError);
+                    }
+                );
+            }
+        );
+        
+        // Pencere boyutu değişikliği
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Animasyon döngüsü - en yüksek FPS
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const delta = clock.getDelta();
+            
+            // Animasyon mixer'ı güncelle
+            if (mixer) {
+                mixer.update(delta);
+            }
+            
+            // Kontrolleri güncelle
+            controls.update();
+            
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+        
+        // CORS için mesaj dinleyici (oyunla iletişim için)
+        window.addEventListener('message', function(e) {
+            if (e.data.type === 'getModelInfo') {
+                window.parent.postMessage({
+                    type: 'modelInfo',
+                    ready: true,
+                    transparent: true,
+                    format: 'gltf'
+                }, '*');
+            }
+        });
+        
+        // CORS engellerini önle
+        renderer.domElement.crossOrigin = "anonymous";
+    </script>
+</body>
+</html>
